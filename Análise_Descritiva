@@ -1,0 +1,1324 @@
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(gtsummary)
+library(writexl)
+library(stringr)
+library(ggplot2)
+library(forcats)
+library(purrr)
+library(eulerr)
+
+dados <- read.csv( ## acessando a tabela
+  "~/Desktop/TCC_ISC_UP.csv",)
+
+dim(dados) ## visão geral dos dados
+names(dados)
+glimpse(dados)
+
+names(dados) <- c( ## renomeando as colunas
+  "id",
+  "at",
+  "nome",
+  "data_nascimento",
+  "idade",
+  "sexo",
+  "dias_internamento_pre_op",
+  "dias_internamento_pos_isc",
+  "data_internamento_pre_op",
+  "data_cirurgia",
+  "data_isc",
+  "dias_cirurgia_ate_isc",
+  "imc",
+  "tabagismo",
+  "etilismo",
+  "has",
+  "dac",
+  "hx_oncologico",
+  "iam",
+  "icc",
+  "doenca_vascular_periferica",
+  "ave",
+  "demencia",
+  "dpoc",
+  "doenca_reumatica",
+  "ulcera_peptica",
+  "masld",
+  "dm_sem_complicacao",
+  "dm_com_complicacao",
+  "hemiplegia_paralisia",
+  "drc",
+  "malignidade_sem_metastase",
+  "leucemia",
+  "linfoma",
+  "ic_hepatica_moderada_grave",
+  "tumor_metastatico_solido",
+  "hiv_aids",
+  "charlson",
+  "asa",
+  "procedimento_realizado",
+  "potencial_contaminacao_ferida",
+  "classificacao_isc",
+  "especialidade_cirurgica",
+  "protese",
+  "carater_cirurgia",
+  "duracao_cirurgia",
+  "tempo_infusao_atb",
+  "hora_primeira_incisao",
+  "atb_profilatico",
+  "antibiotico_profilatico",
+  "atb_empirico",
+  "antibiotico_empirico",
+  "atb_tratamento",
+  "ajuste_terapia",
+  "cultura",
+  "tipo_amostra",
+  "atb_dirigido_cultura",
+  "agente_etiologico_calibrado",
+  "polimicrobiana",
+  "agente_1",
+  "agente_2",
+  "agente_3",
+  "resistencia_1",
+  "resistencia_2",
+  "resistencia_3",
+  "necessidade_uti",
+  "reinternacao",
+  "reoperacao",
+  "prontuario_adequado",
+  "obito",
+  "data_desfecho",
+  "obito_7_dias",
+  "obito_30_dias"
+)
+
+variaveis_quantitativas <- c( ## estratificando tipos de variaveis
+  "idade",
+  "dias_internamento_pre_op",
+  "dias_internamento_pos_isc",
+  "dias_cirurgia_ate_isc",
+  "imc",
+  "charlson",
+  "asa"
+)
+
+variaveis_identificadoras <- c( ## estratificando tipos de variaveis
+  "id",
+  "at",
+  "nome",
+  "data_nascimento",
+  "data_internamento_pre_op",
+  "data_cirurgia",
+  "data_isc",
+  "data_desfecho"
+)
+
+variaveis_temporais <- c( ## estratificando tipos de variaveis
+  "duracao_cirurgia",
+  "tempo_infusao_atb",
+  "hora_primeira_incisao"
+)
+
+variaveis_qualitativas <- setdiff( ## estratificando tipos de variaveis
+  names(dados),
+  c(
+    variaveis_quantitativas,
+    variaveis_identificadoras,
+    variaveis_tempo
+  )
+)
+variaveis_qualitativas
+
+dados <- dados %>% ## arrumando imc > 40
+  mutate(
+    imc = str_squish(imc),
+    imc = case_when(
+      imc == "-" ~ NA_character_,
+      imc == "> 40" ~ "41",
+      TRUE ~ imc
+    ),
+    imc = str_replace(imc, ",", "."),
+    imc = as.numeric(imc)
+  )
+
+dados %>% ## resumo variaveis quantitativas
+  select(all_of(variaveis_quantitativas)) %>%
+  summary()
+
+tabela_quantitativas <- dados %>% ## tabela com medidas de dispersão e tendência central das variaveis quantitativas
+  select(all_of(variaveis_quantitativas)) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variavel",
+    values_to = "valor"
+  ) %>%
+  group_by(variavel) %>%
+  summarise(
+    n = sum(!is.na(valor)),
+    ausentes = sum(is.na(valor)),
+    media = mean(valor, na.rm = TRUE),
+    desvio_padrao = sd(valor, na.rm = TRUE),
+    mediana = median(valor, na.rm = TRUE),
+    Q1 = quantile(valor, 0.25, na.rm = TRUE),
+    Q3 = quantile(valor, 0.75, na.rm = TRUE),
+    IIQ = IQR(valor, na.rm = TRUE),
+    minimo = min(valor, na.rm = TRUE),
+    maximo = max(valor, na.rm = TRUE),
+    .groups = "drop"
+  )
+print(tabela_quantitativas, width = Inf)
+
+write.csv2( ## quantitativas em documento csv
+  tabela_quantitativas,
+  "Medidas_Tendencia_Central_Dispersao.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+ggplot(dados, aes(x = "", y = idade)) + ##boxplot de distribuição de idades
+  geom_boxplot(
+    fill = "lightskyblue2",
+    color = "black",
+    width = 0.5,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.12,
+    height = 0,
+    size = 2,
+    alpha = 0.65,
+    color = "black"
+  ) +
+  labs(
+    title = "Distribuição de Idade",
+    x = NULL,
+    y = "Idade (anos)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+ggplot(dados, aes(x = "", y = charlson)) + ##boxplot de distribuição de charlsons
+  geom_boxplot(
+    fill = "lightskyblue2",
+    color = "black",
+    width = 0.5,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.12,
+    height = 0,
+    size = 2,
+    alpha = 0.65,
+    color = "black"
+  ) +
+  labs(
+    title = "Distribuição do Charlson Score",
+    x = NULL,
+    y = "Charlson (pts)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+ggplot(dados, aes(x = "", y = imc)) + ##boxplot de distribuição de imc
+  geom_boxplot(
+    fill = "lightskyblue2",
+    color = "black",
+    width = 0.5,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.12,
+    height = 0,
+    size = 2,
+    alpha = 0.65,
+    color = "black"
+  ) +
+  labs(
+    title = "Distribuição dos IMCs",
+    x = NULL,
+    y = "IMC (kg/m²)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+auditar_variavel <- function(nome_variavel) { ##verificando variaveis qualitativas
+  
+  x <- dados[[nome_variavel]]
+  
+  cat("\n====================================\n")
+  cat("VARIÁVEL:", nome_variavel, "\n")
+  cat("====================================\n")
+  
+  cat("Classe:", class(x), "\n")
+  cat("Total de pacientes:", length(x), "\n")
+  cat("Valores ausentes (NA):", sum(is.na(x)), "\n")
+  cat("Valores preenchidos:", sum(!is.na(x)), "\n\n")
+  
+  frequencias <- tibble(
+    categoria = as.character(x)
+  ) %>%
+    count(categoria, name = "frequencia", .drop = TRUE) %>%
+    mutate(
+      porcentagem_validos =
+        100 * frequencia / sum(frequencia[categoria != ""])
+    ) %>%
+    arrange(desc(frequencia))
+  
+  print(frequencias, n = Inf, width = Inf)
+}
+
+frequencias_qualitativas <- dados %>%
+  select(all_of(variaveis_qualitativas)) %>%
+  mutate(across(everything(), as.character)) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variavel",
+    values_to = "categoria_original"
+  ) %>%
+  mutate(
+    categoria_original = str_trim(categoria_original),
+    ausente = is.na(categoria_original) |
+      categoria_original %in% c("", "-"),
+    categoria = if_else(
+      ausente,
+      "Sem informação",
+      categoria_original
+    )
+  ) %>%
+  group_by(variavel) %>%
+  mutate(
+    n_total = n(),
+    n_validos = sum(!ausente)
+  ) %>%
+  group_by(variavel, categoria, n_total, n_validos) %>%
+  summarise(
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    porcentagem_total = 100 * n / n_total,
+    porcentagem_validos = if_else(
+      categoria == "Sem informação",
+      NA_real_,
+      100 * n / n_validos
+    )
+  ) %>%
+  select(
+    variavel,
+    categoria,
+    n,
+    porcentagem_validos,
+    porcentagem_total
+  ) %>%
+  arrange(variavel, desc(n))
+
+write.csv2( ## quantitativas em documento csv
+  frequencias_qualitativas,
+  "Frequencias_TCC_ISC.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+correlacionar_todas <- function(
+    dados,
+    excluir = c(
+      "id", "at", "nome",
+      "data_nascimento",
+      "data_internamento_pre_op",
+      "data_cirurgia",
+      "data_isc",
+      "data_desfecho"
+    ),
+    minimo_n = 10
+) {
+  
+  variaveis <- setdiff(names(dados), excluir)
+  
+  elegiveis <- variaveis[
+    vapply(dados[variaveis], function(x) {
+      x <- x[!is.na(x)]
+      length(x) >= minimo_n &&
+        length(unique(x)) > 1
+    }, logical(1))
+  ]
+  
+  tipo <- function(x) {
+    
+    if (inherits(x, c("Date", "POSIXct", "POSIXlt"))) {
+      return("excluir")
+    }
+    
+    if (is.numeric(x) || is.integer(x)) {
+      return("quantitativa")
+    }
+    
+    if (is.logical(x) || is.factor(x) || is.character(x)) {
+      return("qualitativa")
+    }
+    
+    "excluir"
+  }
+  
+  tipos <- vapply(
+    dados[elegiveis],
+    tipo,
+    character(1)
+  )
+  
+  elegiveis <- elegiveis[tipos != "excluir"]
+  
+  pares <- combn(elegiveis, 2, simplify = FALSE)
+  
+  resultados <- lapply(pares, function(par) {
+    
+    v1 <- par[1]
+    v2 <- par[2]
+    
+    x <- dados[[v1]]
+    y <- dados[[v2]]
+    
+    validos <- complete.cases(x, y)
+    x <- x[validos]
+    y <- y[validos]
+    
+    resultado <- tibble(
+      variavel_1 = v1,
+      variavel_2 = v2,
+      tipo_1 = tipo(dados[[v1]]),
+      tipo_2 = tipo(dados[[v2]]),
+      n = length(x),
+      teste = NA_character_,
+      estimativa = NA_real_,
+      p_valor = NA_real_
+    )
+    
+    if (length(x) < minimo_n ||
+        length(unique(x)) < 2 ||
+        length(unique(y)) < 2) {
+      resultado$teste <- "Não calculado"
+      return(resultado)
+    }
+    
+    tryCatch({
+      
+      if (is.numeric(x) && is.numeric(y)) {
+        
+        teste <- cor.test(
+          x, y,
+          method = "spearman",
+          exact = FALSE
+        )
+        
+        resultado$teste <- "Spearman"
+        resultado$estimativa <- unname(teste$estimate)
+        resultado$p_valor <- teste$p.value
+        
+      } else if (
+        (is.numeric(x) && !is.numeric(y)) ||
+        (!is.numeric(x) && is.numeric(y))
+      ) {
+        
+        if (!is.numeric(x)) {
+          temp <- x
+          x <- y
+          y <- temp
+        }
+        
+        grupo <- as.factor(y)
+        
+        if (nlevels(grupo) == 2) {
+          teste <- wilcox.test(
+            x ~ grupo,
+            exact = FALSE
+          )
+          resultado$teste <- "Mann-Whitney"
+        } else {
+          teste <- kruskal.test(x ~ grupo)
+          resultado$teste <- "Kruskal-Wallis"
+        }
+        
+        resultado$p_valor <- teste$p.value
+        
+      } else {
+        
+        tab <- table(x, y)
+        
+        if (nrow(tab) < 2 || ncol(tab) < 2) {
+          resultado$teste <- "Não calculado"
+          return(resultado)
+        }
+        
+        esperado <- suppressWarnings(
+          chisq.test(tab, correct = FALSE)$expected
+        )
+        
+        if (all(dim(tab) == c(2, 2)) &&
+            any(esperado < 5)) {
+          
+          teste <- fisher.test(tab)
+          resultado$teste <- "Fisher"
+          
+        } else if (any(esperado < 5)) {
+          
+          teste <- chisq.test(
+            tab,
+            simulate.p.value = TRUE,
+            B = 20000
+          )
+          resultado$teste <- "Qui-quadrado simulado"
+          
+        } else {
+          
+          teste <- chisq.test(tab, correct = FALSE)
+          resultado$teste <- "Qui-quadrado"
+        }
+        
+        resultado$p_valor <- teste$p.value
+      }
+      
+      resultado
+      
+    }, error = function(e) {
+      resultado$teste <- "Erro no teste"
+      resultado
+    })
+  })
+  
+  bind_rows(resultados) %>%
+    mutate(
+      p_ajustado_BH = p.adjust(
+        p_valor,
+        method = "BH"
+      )
+    ) %>%
+    arrange(p_ajustado_BH)
+}
+
+resultados_todas_variaveis <- correlacionar_todas(dados)
+
+print(resultados_todas_variaveis, n = Inf, width = Inf)
+
+resultados_todas_variaveis %>%
+  filter(!is.na(p_ajustado_BH)) %>%
+  arrange(p_ajustado_BH) %>%
+  print(n = 30, width = Inf)
+
+resultados_todas_variaveis <- resultados_todas_variaveis %>%
+  mutate(
+    existe_associacao_estatistica = case_when(
+      is.na(p_ajustado_BH) ~ "Não avaliado",
+      p_ajustado_BH < 0.05 ~ "Sim",
+      TRUE ~ "Não"
+    )
+  ) %>%
+  select(
+    variavel_1,
+    variavel_2,
+    tipo_1,
+    tipo_2,
+    n,
+    teste,
+    estimativa,
+    p_valor,
+    p_ajustado_BH,
+    existe_associacao_estatistica
+  )
+
+write.csv2(
+  resultados_todas_variaveis,
+  "~/Desktop/Associacoes_Todas_Variaveis.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Padronizar os valores categóricos
+limpar_categoria <- function(x) {
+  x <- str_squish(as.character(x))
+  x[x %in% c("", "-")] <- NA_character_
+  x
+}
+
+# Função para gráfico de barras horizontais
+grafico_barras <- function(data, variavel,
+                           titulo, eixo_x,
+                           top_n = Inf) {
+  
+  tabela <- data %>%
+    transmute(categoria = limpar_categoria({{ variavel }})) %>%
+    filter(!is.na(categoria)) %>%
+    count(categoria, name = "n") %>%
+    arrange(desc(n))
+  
+  if (is.finite(top_n)) {
+    tabela <- tabela %>% slice_head(n = top_n)
+  }
+  
+  ggplot(
+    tabela,
+    aes(x = n, y = fct_reorder(categoria, n))
+  ) +
+    geom_col(fill = "lightskyblue3", color = "black",
+             width = 0.75) +
+    geom_text(aes(label = n), hjust = -0.2, size = 3.5) +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
+    labs(
+      title = titulo,
+      x = eixo_x,
+      y = NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      panel.grid.major.y = element_blank()
+    )
+}
+
+agentes_longos <- dados %>%
+  select(id, agente_1, agente_2, agente_3) %>%
+  pivot_longer(
+    cols = starts_with("agente_"),
+    names_to = "posicao",
+    values_to = "agente"
+  ) %>%
+  mutate(agente = limpar_categoria(agente)) %>%
+  filter(!is.na(agente)) %>%
+  distinct(id, agente) %>%
+  count(agente, name = "n") %>%
+  arrange(desc(n))
+
+ggplot(agentes_longos,
+       aes(x = n, y = fct_reorder(agente, n))) +
+  geom_col(fill = "lightskyblue3", color = "black") +
+  geom_text(aes(label = n), hjust = -0.2, size = 3.5) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Agentes etiológicos identificados",
+    subtitle = "Número de pacientes por agente registrado",
+    x = "Número de pacientes",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank())
+
+resistencias_longas <- dados %>%
+  select(id, resistencia_1, resistencia_2, resistencia_3) %>%
+  pivot_longer(
+    cols = starts_with("resistencia_"),
+    names_to = "posicao",
+    values_to = "resistencia"
+  ) %>%
+  mutate(resistencia = limpar_categoria(resistencia)) %>%
+  filter(!is.na(resistencia)) %>%
+  distinct(id, resistencia) %>%
+  count(resistencia, name = "n") %>%
+  arrange(desc(n))
+
+ggplot(resistencias_longas,
+       aes(x = n, y = fct_reorder(resistencia, n))) +
+  geom_col(fill = "lightskyblue3", color = "black") +
+  geom_text(aes(label = n), hjust = -0.2, size = 3.5) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Perfis de resistência registrados",
+    x = "Número de pacientes",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank())
+
+grafico_barras(
+  dados,
+  antibiotico_profilatico,
+  "Antibióticos utilizados na profilaxia",
+  "Número de registros",
+  top_n = 15
+)
+
+grafico_barras(
+  dados,
+  antibiotico_empirico,
+  "Antibióticos utilizados empiricamente",
+  "Número de registros",
+  top_n = 15
+)
+
+grafico_barras(
+  dados,
+  atb_tratamento,
+  "Registro de tratamento antibiótico",
+  "Número de pacientes"
+)
+
+grafico_barras(
+  dados,
+  procedimento_realizado,
+  "Procedimentos cirúrgicos mais frequentes",
+  "Número de pacientes",
+  top_n = 15
+)
+
+grafico_barras(
+  dados,
+  especialidade_cirurgica,
+  "Casos de ISC por especialidade cirúrgica",
+  "Número de pacientes"
+)
+
+ggplot(dados, aes(x = dias_cirurgia_ate_isc)) +
+  geom_histogram(
+    binwidth = 2,
+    boundary = 0,
+    fill = "#BFEFFF",
+    color = "black",
+    na.rm = TRUE
+  ) +
+  labs(
+    title = "Tempo entre Cirurgia e Diagnóstico da Infecção",
+    x = "Dias entre cirurgia e diagnóstico da ISC",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+ggplot(dados, aes(x = dias_internamento_pre_op)) +
+  geom_histogram(
+    binwidth = 2,
+    boundary = 0,
+    fill = "#BFEFFF",
+    color = "black",
+    na.rm = TRUE
+  ) +
+  labs(
+    title = "Tempo de Internamento Pré-operatório",
+    subtitle = "Distribuição dos dias de internação antes da cirurgia",
+    x = "Dias entre a admissão e a cirurgia",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+ggplot(dados, aes(x = dias_internamento_pos_isc)) +
+  geom_histogram(
+    binwidth = 2,
+    boundary = 0,
+    fill = "#BFEFFF",
+    color = "black",
+    na.rm = TRUE
+  ) +
+  labs(
+    title = "Tempo de Internamento Pós-operatório",
+    x = "Dias entre a cirurgia e o desfecho",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+
+limpar_categoria <- function(x) {
+  x <- str_squish(as.character(x))
+  x[x %in% c("", "-", "NA", "N/A")] <- NA_character_
+  x
+}
+
+agentes_longos <- dados %>%
+  select(id, agente_1, agente_2, agente_3) %>%
+  pivot_longer(
+    cols = starts_with("agente_"),
+    names_to = "coluna_original",
+    values_to = "agente"
+  ) %>%
+  mutate(agente = limpar_categoria(agente)) %>%
+  filter(!is.na(agente)) %>%
+  distinct(id, agente)
+
+resistencias_longas <- dados %>%
+  select(id, resistencia_1, resistencia_2, resistencia_3) %>%
+  pivot_longer(
+    cols = starts_with("resistencia_"),
+    names_to = "coluna_original",
+    values_to = "resistencia"
+  ) %>%
+  mutate(resistencia = limpar_categoria(resistencia)) %>%
+  filter(!is.na(resistencia)) %>%
+  distinct(id, resistencia)
+
+View(agentes_longos)
+View(resistencias_longas)
+
+limpar_valores <- function(x) {
+  x <- str_squish(as.character(x))
+  x[x %in% c("", "-", "NA", "N/A")] <- NA_character_
+  x
+}
+
+pacientes <- dados %>%
+  distinct(id)
+
+agentes_longos <- dados %>%
+  select(id, agente_1, agente_2, agente_3) %>%
+  pivot_longer(
+    cols = starts_with("agente_"),
+    names_to = "coluna_original",
+    values_to = "agente"
+  ) %>%
+  mutate(agente = limpar_valores(agente)) %>%
+  filter(!is.na(agente)) %>%
+  distinct(id, agente)
+
+resistencias_longas <- dados %>%
+  select(id, resistencia_1, resistencia_2, resistencia_3) %>%
+  pivot_longer(
+    cols = starts_with("resistencia_"),
+    names_to = "coluna_original",
+    values_to = "resistencia"
+  ) %>%
+  mutate(resistencia = limpar_valores(resistencia)) %>%
+  filter(!is.na(resistencia)) %>%
+  distinct(id, resistencia)
+
+indicadores_agentes <- agentes_longos %>%
+  mutate(presente = 1L) %>%
+  pivot_wider(
+    names_from = agente,
+    values_from = presente,
+    names_prefix = "agente__",
+    values_fill = 0
+  )
+
+indicadores_resistencias <- resistencias_longas %>%
+  mutate(presente = 1L) %>%
+  pivot_wider(
+    names_from = resistencia,
+    values_from = presente,
+    names_prefix = "resistencia__",
+    values_fill = 0
+  )
+
+dados_analise <- dados %>%
+  select(
+    -agente_1, -agente_2, -agente_3,
+    -resistencia_1, -resistencia_2, -resistencia_3
+  ) %>%
+  left_join(indicadores_agentes, by = "id") %>%
+  left_join(indicadores_resistencias, by = "id")
+
+colunas_indicadoras <- grep(
+  "^(agente__|resistencia__)",
+  names(dados_analise),
+  value = TRUE
+)
+
+dados_analise <- dados_analise %>%
+  mutate(
+    across(
+      all_of(colunas_indicadoras),
+      ~ replace_na(as.integer(.x), 0L)
+    )
+  )
+
+dados_analise <- dados_analise %>%
+  mutate(
+    across(
+      all_of(colunas_indicadoras),
+      ~ factor(.x, levels = c(0, 1))
+    )
+  )
+
+resultados_todas_variaveis <- correlacionar_todas(
+  dados_analise,
+  excluir = c(
+    "id", "at", "nome",
+    "data_nascimento",
+    "data_internamento_pre_op",
+    "data_cirurgia",
+    "data_isc",
+    "data_desfecho"
+  ),
+  minimo_n = 10
+)
+
+resultados_todas_variaveis <- resultados_todas_variaveis %>%
+  mutate(
+    existe_associacao_estatistica = case_when(
+      is.na(p_ajustado_BH) ~ "Não avaliado",
+      p_ajustado_BH < 0.05 ~ "Sim",
+      TRUE ~ "Não"
+    )
+  ) %>%
+  arrange(p_ajustado_BH)
+
+write.csv2(
+  resultados_todas_variaveis,
+  "~/Desktop/Associacoes_Todas_Variaveis_Atualizada.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+associacoes_significativas <- resultados_todas_variaveis %>%
+  filter(
+    !is.na(p_ajustado_BH),
+    p_ajustado_BH < 0.05
+  )
+
+associacoes_qualitativas <- associacoes_significativas %>%
+  filter(
+    tipo_1 == "qualitativa",
+    tipo_2 == "qualitativa"
+  )
+
+detalhamento_qualitativas <- pmap_dfr(
+  associacoes_qualitativas %>%
+    select(
+      variavel_1, variavel_2,
+      n, teste, p_valor, p_ajustado_BH
+    ),
+  
+  function(variavel_1, variavel_2, n, teste,
+           p_valor, p_ajustado_BH) {
+    
+    base <- tibble(
+      categoria_1 = limpar_valores(
+        dados_analise[[variavel_1]]
+      ),
+      categoria_2 = limpar_valores(
+        dados_analise[[variavel_2]]
+      )
+    ) %>%
+      filter(
+        !is.na(categoria_1),
+        !is.na(categoria_2)
+      )
+    
+    tabela <- base %>%
+      count(categoria_1, categoria_2, name = "frequencia") %>%
+      group_by(categoria_1) %>%
+      mutate(
+        percentual_linha = 100 * frequencia / sum(frequencia)
+      ) %>%
+      ungroup() %>%
+      group_by(categoria_2) %>%
+      mutate(
+        percentual_coluna = 100 * frequencia / sum(frequencia)
+      ) %>%
+      ungroup()
+    
+    tabela %>%
+      mutate(
+        variavel_1 = variavel_1,
+        variavel_2 = variavel_2,
+        n_total = nrow(base),
+        teste_global = teste,
+        p_valor_global = p_valor,
+        p_ajustado_BH = p_ajustado_BH
+      ) %>%
+      select(
+        variavel_1, variavel_2,
+        categoria_1, categoria_2,
+        frequencia, percentual_linha,
+        percentual_coluna, n_total,
+        teste_global, p_valor_global,
+        p_ajustado_BH
+      )
+  }
+)
+
+View(detalhamento_qualitativas)
+
+write.csv2(
+  detalhamento_qualitativas,
+  "~/Desktop/Detalhamento_Associacoes_Qualitativas_Atualizado.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# 1. Selecionar todas as comorbidades
+comorbidades <- c(
+  "has",
+  "dac",
+  "iam",
+  "icc",
+  "doenca_vascular_periferica",
+  "ave",
+  "dpoc",
+  "doenca_reumatica",
+  "ulcera_peptica",
+  "masld",
+  "dm_sem_complicacao",
+  "dm_com_complicacao",
+  "drc",
+  "malignidade_sem_metastase",
+  "leucemia",
+  "linfoma",
+  "tumor_metastatico_solido",
+  "hiv_aids"
+)
+
+# Conferir se todas as colunas existem
+setdiff(comorbidades, names(dados))
+
+# 2. Converter respostas em presença/ausência
+presenca <- function(x) {
+  x <- str_to_lower(str_trim(as.character(x)))
+  
+  case_when(
+    x %in% c("sim", "1", "yes", "true") ~ TRUE,
+    x %in% c("não", "nao", "0", "no", "false") ~ FALSE,
+    TRUE ~ NA
+  )
+}
+
+# 3. Criar banco binário
+dados_comorb <- dados %>%
+  select(all_of(comorbidades)) %>%
+  mutate(across(everything(), presenca))
+
+# 4. Calcular frequências de cada comorbidade
+frequencias <- dados_comorb %>%
+  summarise(
+    across(everything(), ~ sum(.x %in% TRUE, na.rm = TRUE))
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "comorbidade",
+    values_to = "n"
+  ) %>%
+  mutate(
+    percentual = round(100 * n / nrow(dados_comorb), 1)
+  ) %>%
+  arrange(desc(n))
+print(frequencias)
+
+# 5. Criar conjuntos de pacientes para cada comorbidade
+conjuntos <- lapply(comorbidades, function(v) {
+  which(dados_comorb[[v]] %in% TRUE)
+})
+
+names(conjuntos) <- comorbidades
+
+# 6. Criar diagrama de Euler com todas as comorbidades
+ajuste <- eulerr::euler(conjuntos)
+
+plot(
+  ajuste,
+  quantities = TRUE,
+  labels = list(font = 2, cex = 0.7),
+  main = "Sobreposição de comorbidades nos pacientes com ISC"
+)
+
+# 7. Avaliar a qualidade do ajuste
+print(ajuste)
+```
+
+
+variaveis <- c(
+  "charlson",
+  "obito",
+  "necessidade_uti",
+  "polimicrobiana",
+  "agentes_microbianos",
+  "tipo_cx",
+  "classificacao_isc",
+  "sexo"
+)
+
+setdiff(variaveis, names(dados))
+
+
+# 2. Função para comparar o Charlson entre as categorias
+# das variáveis qualitativas
+
+analisar_charlson <- function(var) {
+  
+  # Selecionar as duas variáveis e excluir dados ausentes
+  base <- dados %>%
+    transmute(
+      charlson = suppressWarnings(
+        as.numeric(as.character(charlson))
+      ),
+      grupo = as.factor(.data[[var]])
+    ) %>%
+    filter(!is.na(charlson), !is.na(grupo)) %>%
+    droplevels()
+  
+  # Número de categorias observadas
+  n_grupos <- nlevels(base$grupo)
+  
+  # Não realizar teste se houver menos de duas categorias
+  if (n_grupos < 2) {
+    return(tibble(
+      variavel = var,
+      n = nrow(base),
+      teste = NA_character_,
+      estatistica = NA_real_,
+      p_valor = NA_real_,
+      resultado = "Menos de duas categorias válidas"
+    ))
+  }
+  
+  # Estatísticas descritivas por categoria
+  resumo <- base %>%
+    group_by(grupo) %>%
+    summarise(
+      n = n(),
+      mediana = median(charlson),
+      Q1 = quantile(charlson, 0.25),
+      Q3 = quantile(charlson, 0.75),
+      .groups = "drop"
+    )
+  
+  # Teste de Kruskal-Wallis:
+  # comparação do escore entre 2 ou mais grupos
+  teste <- kruskal.test(charlson ~ grupo, data = base)
+  
+  tibble(
+    variavel = var,
+    n = nrow(base),
+    teste = "Kruskal-Wallis",
+    estatistica = unname(teste$statistic),
+    p_valor = teste$p.value,
+    resultado = paste(
+      resumo$grupo,
+      paste0(
+        "n=", resumo$n,
+        "; mediana=", resumo$mediana,
+        "; Q1=", resumo$Q1,
+        "; Q3=", resumo$Q3
+      ),
+      collapse = " | "
+    )
+  )
+}
+
+
+# 3. Executar as sete análises
+resultados_charlson <- map_dfr(
+  variaveis[-1],
+  analisar_charlson
+)
+
+# 4. Visualizar os resultados
+resultados_charlson
+
+# 5. Exportar para Excel
+writexl::write_xlsx(
+  resultados_charlson,
+  "Associacoes_Charlson.xlsx"
+)
+```
+
+library(ggplot2)
+library(dplyr)
+
+# 1. Preparar os dados
+dados_boxplot <- dados %>%
+  mutate(
+    obito = case_when(
+      tolower(trimws(as.character(obito))) %in%
+        c("sim", "1", "yes", "true") ~ "Óbito",
+      tolower(trimws(as.character(obito))) %in%
+        c("não", "nao", "0", "no", "false") ~ "Sem óbito",
+      TRUE ~ NA_character_
+    ),
+    charlson = as.numeric(as.character(charlson))
+  ) %>%
+  filter(!is.na(obito_30_dias), !is.na(charlson)) %>%
+  mutate(
+    obito = factor(
+      obito,
+      levels = c("Sem óbito", "Óbito")
+    )
+  )
+
+# 2. Criar os boxplots lado a lado
+ggplot(
+  dados_boxplot,
+  aes(x = obito, y = charlson, fill = obito)
+) +
+  geom_boxplot(
+    width = 0.5,
+    alpha = 0.8,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.12,
+    alpha = 0.6,
+    size = 2,
+    color = "#24476B"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Sem óbito" = "#B8D4EE",
+      "Óbito" = "#326FA8"
+    )
+  ) +
+  labs(
+    title = "Índice de Charlson segundo óbito",
+    x = NULL,
+    y = "Índice de comorbidade de Charlson"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(
+      face = "bold",
+      size = 10
+    )
+  )
+
+# 1. Preparar os dados
+dados_boxplot <- dados %>%
+  mutate(
+    obito = case_when(
+      tolower(trimws(as.character(obito))) %in%
+        c("sim", "1", "yes", "true") ~ "Óbito",
+      tolower(trimws(as.character(obito))) %in%
+        c("não", "nao", "0", "no", "false") ~ "Sem óbito",
+      TRUE ~ NA_character_
+    ),
+    idade = as.numeric(as.character(idade))
+  ) %>%
+  filter(!is.na(obito), !is.na(idade)) %>%
+  mutate(
+    obito = factor(
+      obito,
+      levels = c("Sem óbito", "Óbito")
+    )
+  )
+
+# 2. Criar os boxplots lado a lado
+ggplot(
+  dados_boxplot,
+  aes(x = obito, y = idade, fill = obito)
+) +
+  geom_boxplot(
+    width = 0.5,
+    alpha = 0.8,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.12,
+    alpha = 0.6,
+    size = 2,
+    color = "#24476B"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Sem óbito" = "#B8D4EE",
+      "Óbito" = "#326FA8"
+    )
+  ) +
+  labs(
+    title = "Idade Segundo óbito",
+    x = NULL,
+    y = "Idade em anos"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(
+      face = "bold",
+      size = 10
+    )
+  )
+
+ggplot(dados_hist, aes(x = dias_cirurgia_ate_isc)) +
+  geom_histogram(
+    binwidth = 5,
+    boundary = 0,
+    fill = "#B8D4EE",
+    color = "white"
+  ) +
+  facet_wrap(
+    ~ obito_30_dias,
+    ncol = 2
+  ) +
+  labs(
+    title = "Tempo entre cirurgia e ISC segundo mortalidade",
+    x = "Tempo entre cirurgia e ISC (dias)",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = "bold",
+      size = 11
+    )
+  )
+
+ggplot(dados_hist, aes(x = dias_cirurgia_ate_isc)) +
+  geom_histogram(
+    binwidth = 5,
+    boundary = 0,
+    fill = "#B8D4EE",
+    color = "white"
+  ) +
+  facet_wrap(
+    ~ obito_30_dias,
+    ncol = 2
+  ) +
+  labs(
+    title = "Tempo entre cirurgia e ISC segundo mortalidade",
+    x = "Tempo entre cirurgia e ISC (dias)",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = "bold",
+      size = 11
+    )
+  )
+
+library(dplyr)
+
+dados_hist %>%
+  group_by(obito_30_dias) %>%
+  summarise(
+    n = n(),
+    mediana = median(dias_cirurgia_ate_isc, na.rm = TRUE),
+    Q1 = quantile(dias_cirurgia_ate_isc, 0.25, na.rm = TRUE),
+    Q3 = quantile(dias_cirurgia_ate_isc, 0.75, na.rm = TRUE),
+    minimo = min(dias_cirurgia_ate_isc, na.rm = TRUE),
+    maximo = max(dias_cirurgia_ate_isc, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+wilcox.test(
+  dias_cirurgia_ate_isc ~ obito_30_dias,
+  data = dados_hist,
+  exact = FALSE
+)
