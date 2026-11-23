@@ -1,0 +1,283 @@
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(purrr)
+library(readr)
+
+dados <- read.csv(
+  "~/Desktop/TCC_mini_queridos2.csv",
+  check.names = FALSE
+)
+
+dim(dados)
+names(dados) 
+glimpse(dados)
+length(names(dados))
+
+names(dados) <- c( ## renomeando as colunas
+  "id",
+  "at",
+  "nome",
+  "data_nascimento",
+  "idade",
+  "sexo",
+  "dias_internamento_pre_op",
+  "dias_internamento_pos_isc",
+  "data_internamento_pre_op",
+  "data_cirurgia",
+  "data_isc",
+  "dias_cirurgia_ate_isc",
+  "imc",
+  "tabagismo",
+  "etilismo",
+  "has",
+  "dac",
+  "hx_oncologico",
+  "iam",
+  "icc",
+  "doenca_vascular_periferica",
+  "ave",
+  "demencia",
+  "dpoc",
+  "doenca_reumatica",
+  "ulcera_peptica",
+  "masld",
+  "dm_sem_complicacao",
+  "dm_com_complicacao",
+  "hemiplegia_paralisia",
+  "drc",
+  "malignidade_sem_metastase",
+  "leucemia",
+  "linfoma",
+  "ic_hepatica_moderada_grave",
+  "tumor_metastatico_solido",
+  "hiv_aids",
+  "charlson",
+  "asa",
+  "procedimento_realizado",
+  "potencial_contaminacao_ferida",
+  "classificacao_isc",
+  "especialidade_cirurgica",
+  "protese",
+  "carater_cirurgia",
+  "duracao_cirurgia",
+  "tempo_infusao_atb",
+  "hora_primeira_incisao",
+  "atb_profilatico",
+  "antibiotico_profilatico",
+  "atb_empirico",
+  "antibiotico_empirico",
+  "atb_tratamento",
+  "ajuste_terapia",
+  "cultura",
+  "tipo_amostra",
+  "atb_dirigido_cultura",
+  "agente_etiologico_calibrado",
+  "polimicrobiana",
+  "agente_1",
+  "agente_2",
+  "agente_3",
+  "resistencia_1",
+  "resistencia_2",
+  "resistencia_3",
+  "necessidade_uti",
+  "reinternacao",
+  "reoperacao",
+  "prontuario_adequado",
+  "obito",
+  "data_desfecho",
+  "obito_7_dias",
+  "obito_30_dias"
+)
+
+table(dados$atb_dirigido_cultura, useNA = "ifany")
+
+table(
+  dados$agente_etiologico_calibrado,
+  useNA = "ifany"
+)
+
+table(dados$ajuste_terapia, useNA = "ifany")
+
+# 1. Variáveis que queremos estudar
+alvos <- c(
+  "atb_dirigido_cultura",
+  "agente_etiologico_calibrado",
+  "ajuste_terapia"
+)
+
+# Variáveis selecionadas para uma tabela menor
+variaveis_teste <- c(
+  "idade",
+  "sexo",
+  "dias_internamento_pre_op",
+  "dias_internamento_pos_isc",
+  "dias_cirurgia_ate_isc",
+  "imc",
+  "tabagismo",
+  "etilismo",
+  "has",
+  "dac",
+  "hx_oncologico",
+  "iam",
+  "icc",
+  "doenca_vascular_periferica",
+  "ave",
+  "demencia",
+  "dpoc",
+  "doenca_reumatica",
+  "ulcera_peptica",
+  "masld",
+  "dm_sem_complicacao",
+  "dm_com_complicacao",
+  "hemiplegia_paralisia",
+  "drc",
+  "malignidade_sem_metastase",
+  "leucemia",
+  "linfoma",
+  "ic_hepatica_moderada_grave",
+  "tumor_metastatico_solido",
+  "hiv_aids",
+  "charlson",
+  "asa",
+  "procedimento_realizado",
+  "potencial_contaminacao_ferida",
+  "classificacao_isc",
+  "especialidade_cirurgica",
+  "protese",
+  "carater_cirurgia",
+  "cultura",
+  "tipo_amostra",
+  "polimicrobiana",
+  "necessidade_uti",
+  "reinternacao",
+  "reoperacao",
+  "obito",
+  "obito_7_dias",
+  "obito_30_dias"
+)
+
+# 2. Remover valores que representam ausência de informação
+limpar_variavel <- function(x) {
+  x <- trimws(as.character(x))
+  x[x %in% c("", "-", "NA", "N/A")] <- NA
+  x
+}
+
+# 3. Função para testar associação entre duas variáveis
+testar_associacao <- function(alvo, variavel, dados) {
+  
+  df <- tibble(
+    y = limpar_variavel(dados[[alvo]]),
+    x_original = dados[[variavel]]
+  ) %>%
+    mutate(
+      x = limpar_variavel(x_original)
+    ) %>%
+    filter(!is.na(y), !is.na(x))
+  
+  if (nrow(df) < 10 ||
+      n_distinct(df$y) < 2 ||
+      n_distinct(df$x) < 2) {
+    return(NULL)
+  }
+  
+  # Se a variável explicativa for numérica
+  x_num <- suppressWarnings(as.numeric(df$x))
+  
+  eh_numerica <- !all(is.na(x_num)) &&
+    n_distinct(x_num[!is.na(x_num)]) >= 5 &&
+    all(!is.na(x_num) | is.na(df$x))
+  
+  if (eh_numerica) {
+    
+    df$x_num <- x_num
+    
+    resultado <- tryCatch(
+      kruskal.test(x_num ~ factor(y), data = df),
+      error = function(e) NULL
+    )
+    
+    if (is.null(resultado)) return(NULL)
+    
+    teste <- "Kruskal-Wallis"
+    p <- resultado$p.value
+    
+  } else {
+    
+    tab <- table(df$y, df$x)
+    
+    if (nrow(tab) < 2 || ncol(tab) < 2) return(NULL)
+    
+    resultado <- tryCatch(
+      chisq.test(tab, simulate.p.value = TRUE, B = 10000),
+      error = function(e) NULL
+    )
+    
+    if (is.null(resultado)) return(NULL)
+    
+    teste <- "Qui-quadrado com Monte Carlo"
+    p <- resultado$p.value
+  }
+  
+  tibble(
+    variavel_alvo = alvo,
+    variavel_testada = variavel,
+    n = nrow(df),
+    teste = teste,
+    p_valor = p
+  )
+}
+
+# 4. Executar os testes
+resultados <- map_dfr(alvos, function(alvo) {
+  
+  map_dfr(variaveis_teste, function(variavel) {
+    
+    if (variavel == alvo) return(NULL)
+    
+    testar_associacao(
+      alvo = alvo,
+      variavel = variavel,
+      dados = dados
+    )
+  })
+})
+
+# 5. Corrigir p-valores por FDR separadamente para cada alvo
+resultados <- resultados %>%
+  group_by(variavel_alvo) %>%
+  mutate(
+    p_ajustado_FDR = p.adjust(p_valor, method = "BH")
+  ) %>%
+  ungroup() %>%
+  arrange(variavel_alvo, p_ajustado_FDR)
+
+# 6. Exibir tabela compacta
+resultados %>%
+  mutate(
+    p_valor = signif(p_valor, 3),
+    p_ajustado_FDR = signif(p_ajustado_FDR, 3)
+  ) %>%
+  print(n = Inf)
+
+# Criar tabela final com indicação de associação estatística
+tabela_final <- resultados %>%
+  mutate(
+    associacao_estatistica = if_else(
+      p_ajustado_FDR < 0.05,
+      "Sim",
+      "Não"
+    )
+  ) %>%
+  arrange(variavel_alvo, p_ajustado_FDR)
+
+# Exportar CSV para a Área de Trabalho
+write_csv2(
+  tabela_final,
+  "~/Desktop/tabela_associacoes_estatisticas.csv",
+  na = ""
+)
+
+# Conferir a tabela exportada
+print(tabela_final, n = Inf)
