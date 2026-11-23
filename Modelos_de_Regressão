@@ -1,0 +1,922 @@
+library(logistf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(forestplot)
+library(broom)
+
+dados <- read.csv(
+  "~/Desktop/TCC_mini_queridos3.csv",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+glimpse(dados)
+
+# Renomear as colunas conforme a base original
+names(dados) <- c(
+  "id", "at", "nome", "data_nascimento", "idade", "sexo",
+  "dias_internamento_pre_op", "dias_internamento_pos_isc",
+  "data_internamento_pre_op", "data_cirurgia", "data_isc",
+  "dias_cirurgia_ate_isc", "imc", "tabagismo", "etilismo",
+  "has", "dac", "hx_oncologico", "iam", "icc",
+  "doenca_vascular_periferica", "ave", "demencia", "dpoc",
+  "doenca_reumatica", "ulcera_peptica", "masld",
+  "dm_sem_complicacao", "dm_com_complicacao",
+  "hemiplegia_paralisia", "drc", "malignidade_sem_metastase",
+  "leucemia", "linfoma", "ic_hepatica_moderada_grave",
+  "tumor_metastatico_solido", "hiv_aids", "charlson", "asa",
+  "procedimento_realizado", "potencial_contaminacao_ferida",
+  "classificacao_isc", "especialidade_cirurgica", "protese",
+  "carater_cirurgia", "duracao_cirurgia", "tempo_infusao_atb",
+  "hora_primeira_incisao", "atb_profilatico",
+  "antibiotico_profilatico", "atb_empirico",
+  "antibiotico_empirico", "atb_tratamento", "ajuste_terapia",
+  "cultura", "tipo_amostra", "atb_dirigido_cultura",
+  "agente_etiologico_calibrado",  "antibioticoterapia_binário",
+  "perfil_microbio_binario", "polimicrobiana",
+  "agente_1", "agente_2", "agente_3",
+  "resistencia_1", "resistencia_2", "resistencia_3",
+  "necessidade_uti", "reinternacao", "reoperacao",
+  "prontuario_adequado", "obito", "data_desfecho",
+  "obito_7_dias", "obito_30_dias"
+)
+
+# Conferir se as variáveis necessárias existem
+variaveis_necessarias <- c(
+  "obito_30_dias", "tumor_metastatico_solido",
+  "dm_com_complicacao", "ave", "hx_oncologico",
+  "classificacao_isc", "reoperacao",
+  "potencial_contaminacao_ferida", "protese",
+  "dias_internamento_pre_op", "dias_internamento_pos_isc",
+  "dias_cirurgia_ate_isc", "atb_dirigido_cultura",
+  "agente_etiologico_calibrado"
+)
+
+if (!all(variaveis_necessarias %in% names(dados))) {
+  stop("Confira os nomes das colunas do arquivo CSV.")
+}
+
+# Mostrar todos os valores observados em cada variável
+variaveis_inspecionar <- c(
+  "obito_30_dias",
+  "ic_hepatica_moderada_grave",
+  "ave",
+  "hx_oncologico",
+  "tumor_metastatico_solido",
+  "dm_com_complicacao"
+)
+
+for (v in variaveis_inspecionar) {
+  cat("\n\n==============================\n")
+  cat("Variável:", v, "\n")
+  cat("==============================\n")
+  
+  print(table(dados[[v]], useNA = "ifany"))
+}
+
+base_obito30 <- dados %>%
+  transmute(
+    # Desfecho
+    obito_30_dias = case_when(
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "não" ~ 0,
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "sim" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # Insuficiência hepática moderada/grave
+    insuf_hepatica = case_when(
+      as.character(ic_hepatica_moderada_grave) == "0" ~ 0,
+      as.character(ic_hepatica_moderada_grave) == "3" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # AVE
+    AVE = case_when(
+      as.character(ave) == "0" ~ 0,
+      as.character(ave) == "1" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # Histórico oncológico
+    hx_oncologico_bin = case_when(
+      is.na(hx_oncologico) ~ NA_real_,
+      str_trim(as.character(hx_oncologico)) == "" ~ NA_real_,
+      str_trim(as.character(hx_oncologico)) %in% c("-", "- ") ~ 0,
+      TRUE ~ 1
+    ),
+    
+    # Tumor metastático sólido
+    tumor_metastatico = case_when(
+      as.character(tumor_metastatico_solido) == "0" ~ 0,
+      as.character(tumor_metastatico_solido) == "6" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # Diabetes com complicação
+    dm_com_complicacao_bin = case_when(
+      as.character(dm_com_complicacao) == "0" ~ 0,
+      as.character(dm_com_complicacao) == "2" ~ 1,
+      TRUE ~ NA_real_
+    )
+  )
+lapply(base_obito30, table, useNA = "ifany")
+
+# Selecionar as variáveis do modelo
+base_modelo_final <- base_obito30 %>%
+  select(
+    obito_30_dias,
+    insuf_hepatica,
+    AVE,
+    hx_oncologico_bin,
+    tumor_metastatico,
+    dm_com_complicacao_bin
+  ) %>%
+  filter(complete.cases(.))
+
+# Conferir tamanho da amostra e número de óbitos
+cat("Total de pacientes:", nrow(base_modelo_final), "\n")
+cat(
+  "Óbitos em 30 dias:",
+  sum(base_modelo_final$obito_30_dias == 1),
+  "\n"
+)
+
+# Regressão logística multivariável
+modelo_firth_obito30 <- logistf(
+  obito_30_dias ~
+    insuf_hepatica +
+    AVE +
+    hx_oncologico_bin +
+    tumor_metastatico +
+    dm_com_complicacao_bin,
+  data = base_modelo_final
+)
+summary(modelo_firth_obito30)
+
+# Extrair resultados do modelo de Firth
+forest_prof <- data.frame(
+  variavel = names(coef(modelo_firth_obito30))[-1],
+  OR = exp(coef(modelo_firth_obito30)[-1]),
+  IC_inf = exp(modelo_firth_obito30$ci.lower[-1]),
+  IC_sup = exp(modelo_firth_obito30$ci.upper[-1]),
+  p = modelo_firth_obito30$prob[-1]
+) %>%
+  mutate(
+    variavel = recode(
+      variavel,
+      insuf_hepatica = "Insuficiência hepática moderada/grave",
+      AVE = "Acidente vascular cerebral",
+      hx_oncologico_bin = "Histórico oncológico",
+      tumor_metastatico = "Tumor metastático sólido",
+      dm_com_complicacao_bin = "Diabetes com complicações"
+    )
+  ) %>%
+  arrange(match(
+    variavel,
+    c(
+      "Tumor metastático sólido",
+      "Diabetes com complicações",
+      "Acidente vascular cerebral",
+      "Histórico oncológico",
+      "Insuficiência hepática moderada/grave"
+    )
+  ))
+
+# Preparar a tabela com OR, IC95% e p
+texto_tabela <- cbind(
+  c("Variável", forest_prof$variavel),
+  c("OR ajustado", ifelse(
+    is.finite(forest_prof$OR),
+    sprintf("%.2f", forest_prof$OR),
+    "Não estimável"
+  )),
+  c("IC 95%", ifelse(
+    is.finite(forest_prof$IC_inf) & is.finite(forest_prof$IC_sup),
+    sprintf("%.2f–%.2f", forest_prof$IC_inf, forest_prof$IC_sup),
+    "Não estimável"
+  )),
+  c("Valor de p", ifelse(
+    forest_prof$p < 0.001,
+    "<0,001",
+    sprintf("%.3f", forest_prof$p)
+  ))
+)
+
+# Forest plot
+forestplot(
+  labeltext = texto_tabela,
+  mean = c(NA, forest_prof$OR),
+  lower = c(NA, forest_prof$IC_inf),
+  upper = c(NA, forest_prof$IC_sup),
+  is.summary = c(TRUE, rep(FALSE, nrow(forest_prof))),
+  zero = 1,
+  xlog = TRUE,
+  graph.pos = 2,
+  clip = c(0.1, 100),
+  xticks = c(0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100),
+  boxsize = 0.18,
+  lineheight = unit(0.8, "cm"),
+  colgap = unit(5, "mm"),
+  graphwidth = unit(7, "cm"),
+  lwd.zero = 1.5,
+  lwd.ci = 1.5,
+  ci.vertices = TRUE,
+  ci.vertices.height = 0.12,
+  col = fpColors(
+    box = "#24476B",
+    line = "#326FA8",
+    zero = "#777777"
+  ),
+  title = "Regressão logística para óbito em 30 dias",
+  xlab = "Odds ratio ajustado (escala logarítmica)",
+  txt_gp = fpTxtGp(
+    label = gpar(cex = 0.85),
+    ticks = gpar(cex = 0.8),
+    xlab = gpar(cex = 0.9),
+    title = gpar(cex = 1.05, fontface = "bold")
+  ),
+  hrzl_lines = list(
+    "1" = gpar(lwd = 1, col = "#CCCCCC")
+  )
+)
+
+base_modelo2 <- dados %>%
+  transmute(
+    obito_30_dias = case_when(
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "não" ~ 0,
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "sim" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # 0 = incisional superficial; 1 = profunda ou órgão/cavidade
+    classificacao_isc_bin = case_when(
+      str_to_lower(str_trim(as.character(classificacao_isc))) ==
+        "incisional superficial" ~ 0,
+      str_to_lower(str_trim(as.character(classificacao_isc))) %in%
+        c("incisional profunda", "órgão/cavidade", "orgao/cavidade") ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # 0 = limpa; 1 = contaminada ou potencialmente contaminada
+    contaminacao_bin = case_when(
+      str_to_lower(str_trim(as.character(potencial_contaminacao_ferida))) ==
+        "limpa" ~ 0,
+      str_to_lower(str_trim(as.character(potencial_contaminacao_ferida))) %in%
+        c("contaminada", "potencialmente contaminada") ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # 0 = não; 1 = sim
+    reoperacao_bin = case_when(
+      str_to_lower(str_trim(as.character(reoperacao))) == "não" ~ 0,
+      str_to_lower(str_trim(as.character(reoperacao))) == "sim" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    protese_bin = case_when(
+      str_to_lower(str_trim(as.character(protese))) == "não" ~ 0,
+      str_to_lower(str_trim(as.character(protese))) == "sim" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    dias_internamento_pre_op =
+      as.numeric(dias_internamento_pre_op),
+    
+    dias_internamento_pos_isc =
+      as.numeric(dias_internamento_pos_isc),
+    
+    dias_cirurgia_ate_isc =
+      as.numeric(dias_cirurgia_ate_isc)
+  )
+
+lapply(
+  base_modelo2 %>%
+    select(
+      classificacao_isc_bin,
+      contaminacao_bin,
+      reoperacao_bin,
+      protese_bin
+    ),
+  table,
+  useNA = "ifany"
+)
+
+table(
+  dados$classificacao_isc,
+  base_modelo2$classificacao_isc_bin,
+  useNA = "ifany"
+)
+
+table(
+  dados$potencial_contaminacao_ferida,
+  base_modelo2$contaminacao_bin,
+  useNA = "ifany"
+)
+
+base_modelo2_final <- base_modelo2 %>%
+  filter(complete.cases(.))
+
+cat("Total de pacientes:", nrow(base_modelo2_final), "\n")
+cat(
+  "Óbitos em 30 dias:",
+  sum(base_modelo2_final$obito_30_dias == 1),
+  "\n"
+)
+
+modelo_firth_obito30_m2 <- logistf(
+  obito_30_dias ~
+    classificacao_isc_bin +
+    reoperacao_bin +
+    contaminacao_bin +
+    protese_bin +
+    dias_internamento_pre_op +
+    dias_internamento_pos_isc +
+    dias_cirurgia_ate_isc,
+  data = base_modelo2_final
+)
+summary(modelo_firth_obito30_m2)
+
+# Extrair resultados do Modelo 2 (Firth)
+forest_prof_m2 <- data.frame(
+  variavel = names(coef(modelo_firth_obito30_m2))[-1],
+  OR = exp(coef(modelo_firth_obito30_m2)[-1]),
+  IC_inf = exp(modelo_firth_obito30_m2$ci.lower[-1]),
+  IC_sup = exp(modelo_firth_obito30_m2$ci.upper[-1]),
+  p = modelo_firth_obito30_m2$prob[-1]
+) %>%
+  mutate(
+    variavel = recode(
+      variavel,
+      classificacao_isc_bin =
+        "Profundidade da ISC",
+      reoperacao_bin = "Reoperação",
+      contaminacao_bin =
+        "Contaminação da ferida",
+      protese_bin = "Uso de prótese",
+      dias_internamento_pre_op =
+        "Dias de internação pré-operatória",
+      dias_internamento_pos_isc =
+        "Tempo de internamento após ISC",
+      dias_cirurgia_ate_isc =
+        "ISC em pós operatório tardio"
+    )
+  ) %>%
+  arrange(match(
+    variavel,
+    c(
+      "Profundidade da ISC",
+      "Contaminação da ferida",
+      "Reoperação",
+      "Uso de prótese",
+      "Dias de internação pré-operatória",
+      "Tempo de internamento após ISC",
+      "ISC em pós operatório tardio"
+    )
+  ))
+
+# Preparar os textos da tabela
+texto_tabela_m2 <- cbind(
+  c("Variável", forest_prof_m2$variavel),
+  
+  c("OR ajustado", ifelse(
+    is.finite(forest_prof_m2$OR),
+    sprintf("%.2f", forest_prof_m2$OR),
+    "Não estimável"
+  )),
+  
+  c("IC 95%", ifelse(
+    is.finite(forest_prof_m2$IC_inf) &
+      is.finite(forest_prof_m2$IC_sup),
+    sprintf(
+      "%.2f–%.2f",
+      forest_prof_m2$IC_inf,
+      forest_prof_m2$IC_sup
+    ),
+    "Não estimável"
+  )),
+  
+  c("Valor de p", ifelse(
+    forest_prof_m2$p < 0.001,
+    "<0,001",
+    sprintf("%.3f", forest_prof_m2$p)
+  ))
+)
+
+# Forest plot do Modelo 2
+forestplot(
+  labeltext = texto_tabela_m2,
+  mean = c(NA, forest_prof_m2$OR),
+  lower = c(NA, forest_prof_m2$IC_inf),
+  upper = c(NA, forest_prof_m2$IC_sup),
+  is.summary = c(TRUE, rep(FALSE, nrow(forest_prof_m2))),
+  zero = 1,
+  xlog = TRUE,
+  graph.pos = 2,
+  clip = c(0.1, 100),
+  xticks = c(0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100),
+  boxsize = 0.18,
+  lineheight = unit(0.8, "cm"),
+  colgap = unit(5, "mm"),
+  graphwidth = unit(7, "cm"),
+  lwd.zero = 1.5,
+  lwd.ci = 1.5,
+  ci.vertices = TRUE,
+  ci.vertices.height = 0.12,
+  col = fpColors(
+    box = "#24476B",
+    line = "#326FA8",
+    zero = "#777777"
+  ),
+  title = "Características da infecção e óbito em 30 dias",
+  xlab = "Odds ratio ajustado (escala logarítmica)",
+  txt_gp = fpTxtGp(
+    label = gpar(cex = 0.82),
+    ticks = gpar(cex = 0.8),
+    xlab = gpar(cex = 0.9),
+    title = gpar(cex = 1.0, fontface = "bold")
+  ),
+  hrzl_lines = list(
+    "1" = gpar(lwd = 1, col = "#CCCCCC")
+  )
+)
+
+# Frequência de pacientes e óbitos por agente etiológico
+dados_agente_identificado <- dados_modelo %>%
+  filter(
+    !is.na(obito_30_dias_bin),
+    !is.na(agente_etiologico_cat),
+    as.character(agente_etiologico_cat) != "não identificado"
+  ) %>%
+  mutate(
+    agente_etiologico_cat = droplevels(
+      factor(as.character(agente_etiologico_cat))
+    )
+  )
+
+# Ajustar novamente a regressão de Firth
+modelo_firth_agente_identificado <- logistf(
+  obito_30_dias_bin ~ agente_etiologico_cat,
+  data = dados_agente_identificado
+)
+
+dados_agente_identificado$agente_etiologico_cat <- relevel(
+  factor(dados_agente_identificado$agente_etiologico_cat),
+  ref = "BGN S"
+)
+
+# Conferir a amostra e os coeficientes
+nobs(modelo_firth_agente_identificado)
+summary(modelo_firth_agente_identificado)
+
+# OR e IC 95%
+exp(cbind(
+  OR = coef(modelo_firth_agente_identificado),
+  confint(modelo_firth_agente_identificado)
+))
+
+# Odds ratios e intervalos de confiança de 95%
+exp(cbind(
+  OR = coef(modelo_firth_agente_identificado),
+  confint(modelo_firth_agente_identificado)
+))
+
+library(dplyr)
+library(logistf)
+library(forestplot)
+library(grid)
+
+# Preparar a base e definir BGN S como referência
+dados_agente_identificado <- dados_modelo %>%
+  filter(
+    !is.na(obito_30_dias_bin),
+    !is.na(agente_etiologico_cat),
+    as.character(agente_etiologico_cat) != "não identificado"
+  ) %>%
+  mutate(
+    agente_etiologico_cat = factor(
+      as.character(agente_etiologico_cat)
+    )
+  ) %>%
+  mutate(
+    agente_etiologico_cat = relevel(
+      agente_etiologico_cat,
+      ref = "BGN S"
+    )
+  )
+
+# Ajustar regressão logística penalizada de Firth
+modelo_firth_agente_identificado <- logistf(
+  obito_30_dias_bin ~ agente_etiologico_cat,
+  data = dados_agente_identificado
+)
+
+# Conferir resultados
+nobs(modelo_firth_agente_identificado)
+summary(modelo_firth_agente_identificado)
+
+# Extrair OR, IC 95% e p
+forest_agente <- data.frame(
+  termo = names(coef(modelo_firth_agente_identificado))[-1],
+  OR = exp(coef(modelo_firth_agente_identificado)[-1]),
+  IC_inf = exp(modelo_firth_agente_identificado$ci.lower[-1]),
+  IC_sup = exp(modelo_firth_agente_identificado$ci.upper[-1]),
+  p = modelo_firth_agente_identificado$prob[-1]
+) %>%
+  mutate(
+    variavel = sub(
+      "^agente_etiologico_cat",
+      "",
+      termo
+    )
+  )
+
+# Preparar os textos da tabela
+texto_tabela_agente <- cbind(
+  c("Agente etiológico", forest_agente$variavel),
+  
+  c("OR ajustado", ifelse(
+    is.finite(forest_agente$OR),
+    sprintf("%.2f", forest_agente$OR),
+    "Não estimável"
+  )),
+  
+  c("IC 95%", ifelse(
+    is.finite(forest_agente$IC_inf) &
+      is.finite(forest_agente$IC_sup),
+    sprintf(
+      "%.2f–%.2f",
+      forest_agente$IC_inf,
+      forest_agente$IC_sup
+    ),
+    "Não estimável"
+  )),
+  
+  c("Valor de p", ifelse(
+    forest_agente$p < 0.001,
+    "<0,001",
+    sprintf("%.3f", forest_agente$p)
+  ))
+)
+
+# Forest plot
+forestplot(
+  labeltext = texto_tabela_agente,
+  
+  mean = c(NA, forest_agente$OR),
+  lower = c(NA, forest_agente$IC_inf),
+  upper = c(NA, forest_agente$IC_sup),
+  
+  is.summary = c(TRUE, rep(FALSE, nrow(forest_agente))),
+  
+  zero = 1,
+  xlog = TRUE,
+  graph.pos = 2,
+  
+  clip = c(0.1, 100),
+  xticks = c(0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100),
+  
+  boxsize = 0.18,
+  lineheight = unit(0.8, "cm"),
+  colgap = unit(5, "mm"),
+  graphwidth = unit(7, "cm"),
+  
+  lwd.zero = 1.5,
+  lwd.ci = 1.5,
+  ci.vertices = TRUE,
+  ci.vertices.height = 0.12,
+  
+  col = fpColors(
+    box = "#24476B",
+    line = "#326FA8",
+    zero = "#777777"
+  ),
+  
+  title = "Agentes etiológicos e óbito em 30 dias",
+  xlab = "Odds ratio (escala logarítmica)",
+  
+  txt_gp = fpTxtGp(
+    label = gpar(cex = 0.82),
+    ticks = gpar(cex = 0.8),
+    xlab = gpar(cex = 0.9),
+    title = gpar(cex = 1.0, fontface = "bold")
+  ),
+  
+  hrzl_lines = list(
+    "1" = gpar(lwd = 1, col = "#CCCCCC")
+  )
+)
+
+# Conferir os nomes que vieram diretamente do CSV
+dados_brutos <- read.csv(
+  "~/Desktop/TCC_mini_queridos3.csv",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+# Mostrar os nomes originais das colunas
+names(dados_brutos)
+
+# Conferir especificamente as três colunas relevantes
+grep(
+  "antibioticoterapia|perfil_microbio|agente_etiologico",
+  names(dados_brutos),
+  value = TRUE
+)
+
+dados <- dados_brutos %>%
+  rename(
+    agente_etiologico_calibrado = `agente etiológico calibrado para analise`,
+    antibioticoterapia_binário = `antibioticoterapia binário`,
+    perfil_microbio_binario = `perfil microbio binario`
+  )
+
+names(dados)[grepl(
+  "antibioticoterapia|perfil_microbio|agente_etiologico",
+  names(dados)
+)]
+
+table(dados$`antibioticoterapia_binário`, useNA = "ifany")
+
+table(dados$perfil_microbio_binario, useNA = "ifany")
+
+dados_modelo3 <- dados %>%
+  transmute(
+    # Desfecho: óbito em 30 dias
+    obito_30_dias_bin = case_when(
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "não" ~ 0,
+      str_to_lower(str_trim(as.character(obito_30_dias))) == "sim" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    # Charlson: manter como variável numérica
+    charlson = suppressWarnings(as.numeric(as.character(charlson))),
+    
+    # Classificação da ISC:
+    # 1 = incisional profunda ou órgão/cavidade
+    # 0 = incisional superficial
+    classificacao_isc_bin = case_when(
+      str_to_lower(str_squish(as.character(classificacao_isc))) %in%
+        c("incisional profunda", "órgão/cavidade") ~ 1,
+      str_to_lower(str_squish(as.character(classificacao_isc))) ==
+        "incisional superficial" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Reoperação
+    reoperacao_bin = case_when(
+      str_to_lower(str_trim(as.character(reoperacao))) == "sim" ~ 1,
+      str_to_lower(str_trim(as.character(reoperacao))) == "não" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Potencial de contaminação da ferida:
+    # 1 = contaminada ou potencialmente contaminada
+    # 0 = limpa
+    contaminacao_bin = case_when(
+      str_to_lower(str_trim(as.character(potencial_contaminacao_ferida))) %in%
+        c("contaminada", "potencialmente contaminada") ~ 1,
+      str_to_lower(str_trim(as.character(potencial_contaminacao_ferida))) ==
+        "limpa" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Prótese
+    protese_bin = case_when(
+      str_to_lower(str_trim(as.character(protese))) == "sim" ~ 1,
+      str_to_lower(str_trim(as.character(protese))) == "não" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Tempos de internação
+    dias_internamento_pre_op =
+      suppressWarnings(as.numeric(as.character(dias_internamento_pre_op))),
+    
+    dias_internamento_pos_isc =
+      suppressWarnings(as.numeric(as.character(dias_internamento_pos_isc))),
+    
+    dias_cirurgia_ate_isc =
+      suppressWarnings(as.numeric(as.character(dias_cirurgia_ate_isc))),
+    
+    # Perfil microbiológico:
+    # 1 = BGN CARBA-R; 0 = demais categorias identificadas
+    perfil_microbio_bin = case_when(
+      str_to_lower(str_squish(as.character(perfil_microbio_binario))) ==
+        "bgn carba r" ~ 1,
+      !is.na(perfil_microbio_binario) &
+        str_to_lower(str_squish(as.character(perfil_microbio_binario))) !=
+        "não identificado" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Antibioticoterapia:
+    # 1 = sem correção, com necessidade de escalonar
+    # 0 = demais categorias válidas, exceto sem dados de antibiótico
+    antibioticoterapia_bin = case_when(
+      str_to_lower(str_squish(as.character(`antibioticoterapia_binário`))) ==
+        "sem correção, necessidade de escalonar" ~ 1,
+      !is.na(`antibioticoterapia_binário`) &
+        str_to_lower(str_squish(as.character(`antibioticoterapia_binário`))) !=
+        "sem dados antibiótico" ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+dados <- dados %>%
+  rename(
+    obito_30_dias = `ÓBITO EM 30 DIAS`,
+    charlson = CHARLSON,
+    classificacao_isc = `CLASSIFICAÇÃO DA ISC`,
+    reoperacao = REOPERAÇÃO,
+    potencial_contaminacao_ferida =
+      `CLASSIFICAÇÃO- POTENCIAL DE CONTAMINAÇÃO DA FERIDA CIRÚRGICA`,
+    protese = Protese,
+    dias_internamento_pre_op =
+      `DIAS DE INTERNAMENTO (pré OP) (data admissão - data cirurgia)`,
+    dias_internamento_pos_isc =
+      `Período internado após infecção (data desfecho (alta/obito) - data ISC)`,
+    dias_cirurgia_ate_isc =
+      `Prazo entre cirurgia e infecção (data ISC - data cirurgia)`
+  )
+
+# Selecionar as variáveis do modelo e remover casos incompletos
+base_modelo3 <- dados_modelo3 %>%
+  select(
+    obito_30_dias_bin,
+    charlson,
+    classificacao_isc_bin,
+    reoperacao_bin,
+    contaminacao_bin,
+    protese_bin,
+    dias_internamento_pre_op,
+    dias_internamento_pos_isc,
+    dias_cirurgia_ate_isc,
+    perfil_microbio_bin,
+    antibioticoterapia_bin
+  ) %>%
+  filter(complete.cases(.))
+
+# Conferir tamanho da amostra
+cat("Total de pacientes:", nrow(base_modelo3), "\n")
+
+cat(
+  "Óbitos em 30 dias:",
+  sum(base_modelo3$obito_30_dias_bin == 1),
+  "\n"
+)
+
+cat(
+  "Sobreviventes em 30 dias:",
+  sum(base_modelo3$obito_30_dias_bin == 0),
+  "\n"
+)
+
+# Conferir a distribuição do desfecho
+table(base_modelo3$obito_30_dias_bin)
+
+modelo_firth_isc_atb <- logistf(
+  obito_30_dias_bin ~
+    charlson +
+    classificacao_isc_bin +
+    perfil_microbio_bin +
+    antibioticoterapia_bin,
+  data = base_modelo3
+)
+summary(modelo_firth_isc_atb)
+
+# Distribuição da internação pré-operatória
+summary(base_modelo3$dias_internamento_pre_op)
+
+quantile(
+  base_modelo3$dias_internamento_pre_op,
+  probs = c(0, 0.25, 0.5, 0.75, 0.90, 0.95, 0.99, 1),
+  na.rm = TRUE
+)
+
+# Valores mais altos
+base_modelo3 %>%
+  arrange(desc(dias_internamento_pre_op)) %>%
+  select(
+    obito_30_dias_bin,
+    dias_internamento_pre_op,
+    charlson
+  ) %>%
+  head(15)
+
+# Óbitos e sobreviventes por faixas de internação pré-operatória
+base_modelo3 %>%
+  mutate(
+    faixa_pre_op = cut(
+      dias_internamento_pre_op,
+      breaks = c(-Inf, 1, 7, 30, Inf),
+      labels = c("Até 1 dia", "2–7 dias", "8–30 dias", ">30 dias")
+    )
+  ) %>%
+  count(faixa_pre_op, obito_30_dias_bin)
+
+modelo_firth_sem_preop <- logistf(
+  obito_30_dias_bin ~
+    charlson +
+    classificacao_isc_bin +
+    reoperacao_bin +
+    contaminacao_bin +
+    protese_bin +
+    dias_internamento_pos_isc +
+    dias_cirurgia_ate_isc +
+    perfil_microbio_bin +
+    antibioticoterapia_bin,
+  data = base_modelo3
+)
+summary(modelo_firth_sem_preop)
+
+library(dplyr)
+library(forestplot)
+library(grid)
+
+# Extrair resultados do modelo de Firth
+forest_isc_atb <- data.frame(
+  termo = names(coef(modelo_firth_isc_atb))[-1],
+  OR = exp(coef(modelo_firth_isc_atb)[-1]),
+  IC_inf = exp(modelo_firth_isc_atb$ci.lower[-1]),
+  IC_sup = exp(modelo_firth_isc_atb$ci.upper[-1]),
+  p = modelo_firth_isc_atb$prob[-1]
+) %>%
+  mutate(
+    variavel = recode(
+      termo,
+      charlson = "Índice de Charlson",
+      classificacao_isc_bin = "Profundidade da ISC",
+      perfil_microbio_bin = "BGN CARBA-R",
+      antibioticoterapia_bin = "Necessidade de ajuste da antibioticoterapia"
+    ),
+    OR_texto = ifelse(
+      is.finite(OR),
+      sprintf("%.2f", OR),
+      "Não estimável"
+    ),
+    IC_texto = ifelse(
+      is.finite(IC_inf) & is.finite(IC_sup),
+      sprintf("%.2f–%.2f", IC_inf, IC_sup),
+      "Não estimável"
+    ),
+    p_texto = ifelse(
+      p < 0.001,
+      "<0,001",
+      sub("\\.", ",", sprintf("%.3f", p))
+    )
+  )
+
+# Preparar os textos da tabela
+texto_tabela_isc_atb <- cbind(
+  c("Variável", forest_isc_atb$variavel),
+  c("OR ajustado", forest_isc_atb$OR_texto),
+  c("IC 95%", forest_isc_atb$IC_texto),
+  c("Valor de p", forest_isc_atb$p_texto)
+)
+
+# Forest plot
+forestplot(
+  labeltext = texto_tabela_isc_atb,
+  
+  mean = c(NA, forest_isc_atb$OR),
+  lower = c(NA, forest_isc_atb$IC_inf),
+  upper = c(NA, forest_isc_atb$IC_sup),
+  
+  is.summary = c(TRUE, rep(FALSE, nrow(forest_isc_atb))),
+  
+  zero = 1,
+  xlog = TRUE,
+  graph.pos = 2,
+  
+  clip = c(0.1, 100),
+  xticks = c(0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100),
+  
+  boxsize = 0.18,
+  lineheight = unit(0.8, "cm"),
+  colgap = unit(5, "mm"),
+  graphwidth = unit(7, "cm"),
+  
+  lwd.zero = 1.5,
+  lwd.ci = 1.5,
+  ci.vertices = TRUE,
+  ci.vertices.height = 0.12,
+  
+  col = fpColors(
+    box = "#24476B",
+    line = "#326FA8",
+    zero = "#777777"
+  ),
+  
+  title = "Fatores associados ao óbito em 30 dias",
+  xlab = "Odds ratio (escala logarítmica)",
+  
+  txt_gp = fpTxtGp(
+    label = gpar(cex = 0.82),
+    ticks = gpar(cex = 0.8),
+    xlab = gpar(cex = 0.9),
+    title = gpar(cex = 1.0, fontface = "bold")
+  ),
+  
+  hrzl_lines = list(
+    "1" = gpar(lwd = 1, col = "#CCCCCC")
+  )
+)
